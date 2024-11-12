@@ -1,0 +1,72 @@
+{
+    "annotations": {
+      "list": []
+    },
+    "description": "Dashboard for visualizing SoC analysis results",
+    "editable": true,
+    "gnetId": null,
+    "graphTooltip": 0,
+    "id": null,
+    "iteration": 1627471290361,
+    "links": [],
+    "panels": [
+      {
+        "datasource": "PostgreSQL",
+        "fieldConfig": {
+          "defaults": {},
+          "overrides": []
+        },
+        "gridPos": {
+          "h": 12,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "id": 1,
+        "options": {},
+        "targets": [
+          {
+            "format": "time_series",
+            "group": [],
+            "metricColumn": "none",
+            "rawQuery": true,
+            "rawSql": "SELECT\n  NOW() as time,\n  metric,\n  average,\n  maximum,\n  minimum\nFROM\n  soc_analysis_results\nORDER BY\n  time ASC",
+            "refId": "A",
+            "select": [
+              [
+                {
+                  "params": [
+                    "value"
+                  ],
+                  "type": "column"
+                }
+              ]
+            ],
+            "table": "soc_analysis_results",
+            "timeColumn": "time",
+            "timeColumnType": "timestamp",
+            "where": []
+          }
+        ],
+        "title": "SoC Analysis Results",
+        "type": "graph"
+      }
+    ],
+    "refresh": "10s",
+    "schemaVersion": 30,
+    "style": "dark",
+    "tags": ["SoC", "Analysis"],
+    "templating": {
+      "list": []
+    },
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "",
+    "title": "SoC Analysis Results Dashboard",
+    "uid": "soc-analysis-results",
+    "version": 1
+  }
+  

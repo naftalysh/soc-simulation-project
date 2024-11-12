@@ -1,0 +1,23 @@
+# 
+# Create Data Source Provisioning File
+# 
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: ${GF_DATASOURCE_POSTGRESQL_DB}
+    user: ${GF_DATASOURCE_POSTGRESQL_USER}
+    secureJsonData:
+      password: ${GF_DATASOURCE_POSTGRESQL_PASSWORD}
+    editable: true

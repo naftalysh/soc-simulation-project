@@ -1,0 +1,26 @@
+# 
+# The Dockerfile for building the Spark application image
+# 
+
+# Base image
+FROM bitnami/spark:latest
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY data_analysis.py /app/
+COPY requirements.txt /app/
+
+# Install Python dependencies
+RUN install_packages python3-pip
+RUN pip3 install -r requirements.txt
+
+# Set Spark master URL (will be overridden in docker-compose.yml)
+ENV SPARK_MASTER_URL spark://spark-master:7077
+
+# Download PostgreSQL JDBC driver
+RUN wget https://jdbc.postgresql.org/download/postgresql-42.2.23.jar -P /opt/bitnami/spark/jars/
+
+# Command to submit the Spark job
+CMD ["/opt/bitnami/spark/bin/spark-submit", "--master", "spark://spark-master:7077", "/app/data_analysis.py"]

@@ -1,0 +1,528 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: api-backend
+  name: api-backend
+spec:
+  ports:
+    - name: "5000"
+      port: 5000
+      targetPort: 5000
+  selector:
+    io.kompose.service: api-backend
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: grafana
+  name: grafana
+spec:
+  ports:
+    - name: "3001"
+      port: 3001
+      targetPort: 3000
+  selector:
+    io.kompose.service: grafana
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: locust
+  name: locust
+spec:
+  ports:
+    - name: "8089"
+      port: 8089
+      targetPort: 8089
+  selector:
+    io.kompose.service: locust
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: postgres
+  name: postgres
+spec:
+  ports:
+    - name: "5432"
+      port: 5432
+      targetPort: 5432
+  selector:
+    io.kompose.service: postgres
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: prestosql
+  name: prestosql
+spec:
+  ports:
+    - name: "8080"
+      port: 8080
+      targetPort: 8080
+  selector:
+    io.kompose.service: prestosql
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: prometheus
+  name: prometheus
+spec:
+  ports:
+    - name: "9090"
+      port: 9090
+      targetPort: 9090
+  selector:
+    io.kompose.service: prometheus
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: soc-emulator
+  name: soc-emulator
+spec:
+  ports:
+    - name: "5555"
+      port: 5555
+      targetPort: 5555
+    - name: "9100"
+      port: 9100
+      targetPort: 9100
+  selector:
+    io.kompose.service: soc-emulator
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    io.kompose.service: spark-master
+  name: spark-master
+spec:
+  ports:
+    - name: "7077"
+      port: 7077
+      targetPort: 7077
+    - name: "8081"
+      port: 8081
+      targetPort: 8080
+  selector:
+    io.kompose.service: spark-master
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: api-backend
+  name: api-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: api-backend
+  template:
+    metadata:
+      labels:
+        io.kompose.service: api-backend
+    spec:
+      containers:
+        - image: api-backend
+          name: api-backend
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - secretRef:
+                name: env-secrets
+      restartPolicy: Always
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: grafana
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: grafana
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: grafana
+    spec:
+      containers:
+        - image: grafana/grafana:latest
+          name: grafana
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: env-secrets
+          volumeMounts:
+            - mountPath: /var/lib/grafana
+              name: grafana-data
+            - mountPath: /var/lib/grafana/dashboards
+              name: grafana-claim2
+      volumes:
+        - name: grafana-data
+          persistentVolumeClaim:
+            claimName: grafana-data
+        - name: grafana-claim2
+          persistentVolumeClaim:
+            claimName: grafana-claim2
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-claim2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: locust
+  name: locust
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: locust
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: locust
+    spec:
+      containers:
+        - image: locustio/locust
+          name: locust
+          ports:
+            - containerPort: 8089
+          envFrom:
+            - secretRef:
+                name: env-secrets
+          volumeMounts:
+            - mountPath: /locustfile.py
+              name: locust-cm0
+              subPath: locustfile.py
+      volumes:
+        - configMap:
+            name: locust-cm0
+          name: locust-cm0
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: locust-cm0
+data:
+  locustfile.py: |
+    # Locust Performance Testing Script
+    from locust import HttpUser, task, between
+    class SoCUser(HttpUser):
+        wait_time = between(1, 5)
+        @task
+        def benchmark(self):
+            self.client.get("/")
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: postgres
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: postgres
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: postgres
+    spec:
+      containers:
+        - image: postgres:13
+          name: postgres
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: env-secrets
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: postgres-data
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: prestosql
+  name: prestosql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: prestosql
+  template:
+    metadata:
+      labels:
+        io.kompose.service: prestosql
+    spec:
+      containers:
+        - image: trinodb/trino:latest
+          name: prestosql
+          ports:
+            - containerPort: 8080
+      restartPolicy: Always
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: prometheus
+  name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: prometheus
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: prometheus
+    spec:
+      containers:
+        - image: prom/prometheus:latest
+          name: prometheus
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - mountPath: /etc/prometheus/prometheus.yml
+              name: prometheus-cm0
+              subPath: prometheus.yml
+      volumes:
+        - configMap:
+            name: prometheus-cm0
+          name: prometheus-cm0
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-cm0
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      - job_name: 'soc-emulator'
+        static_configs:
+          - targets: ['soc-emulator:9100']
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: soc-emulator
+  name: soc-emulator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: soc-emulator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        io.kompose.service: soc-emulator
+    spec:
+      containers:
+        - image: soc-emulator
+          name: soc-emulator
+          ports:
+            - containerPort: 5555
+            - containerPort: 9100
+          envFrom:
+            - secretRef:
+                name: env-secrets
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /benchmarks
+              name: soc-emulator-claim0
+      volumes:
+        - name: soc-emulator-claim0
+          persistentVolumeClaim:
+            claimName: soc-emulator-claim0
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: soc-emulator-claim0
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: spark-app
+  name: spark-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: spark-app
+  template:
+    metadata:
+      labels:
+        io.kompose.service: spark-app
+    spec:
+      containers:
+        - image: spark-app
+          name: spark-app
+          args:
+            - /opt/bitnami/spark/bin/spark-submit
+            - --master
+            - spark://spark-master:7077
+            - /app/data_analysis.py
+          envFrom:
+            - secretRef:
+                name: env-secrets
+      restartPolicy: Always
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: spark-master
+  name: spark-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: spark-master
+  template:
+    metadata:
+      labels:
+        io.kompose.service: spark-master
+    spec:
+      containers:
+        - image: bitnami/spark:latest
+          name: spark-master
+          ports:
+            - containerPort: 7077
+            - containerPort: 8080
+          env:
+            - name: SPARK_MODE
+              value: "master"
+      restartPolicy: Always
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    io.kompose.service: spark-worker
+  name: spark-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: spark-worker
+  template:
+    metadata:
+      labels:
+        io.kompose.service: spark-worker
+    spec:
+      containers:
+        - image: bitnami/spark:latest
+          name: spark-worker
+          env:
+            - name: SPARK_MASTER_URL
+              value: "spark://spark-master:7077"
+            - name: SPARK_MODE
+              value: "worker"
+      restartPolicy: Always
