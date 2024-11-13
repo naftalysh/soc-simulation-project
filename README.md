@@ -327,7 +327,7 @@ soc-simulation-project/
               2. Generate Performance Data
                  * The SoC emulator is scheduled to run benchmarks every 30 minutes via cron
                  * You can manually trigger benchmarks:
-                   docker exec -it soc-simulation-project_soc-emulator_1 bash
+                   docker exec -it soc-simulation-project-new_soc-emulator_1  bash
                    ./run_benchmarks.sh
 
               3. Data Ingestion

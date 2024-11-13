@@ -40,6 +40,10 @@ Best practices involve setting accurate simulation parameters, using realistic w
        - In WSL2, modprobe might fail with an error like FATAL: Module nbd not found., indicating that the module isn't available in the current kernel.
        - nbds_max Parameter: Determines the maximum number of NBD devices that can be concurrently managed by the kernel (defaults to 16)
        - To confirm that the module has been loaded with the desired parameters: cat /sys/module/nbd/parameters/max_part 
+  3. Install the nbd-client Package
+     sudo apt-get update
+     sudo apt-get install nbd-client
+
     
 
 
