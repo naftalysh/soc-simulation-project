@@ -1,5 +1,3 @@
-# API Backend Application Code
-
 from flask import Flask, request, jsonify
 import psycopg2
 import os
@@ -8,7 +6,8 @@ app = Flask(__name__)
 
 # Database connection
 conn = psycopg2.connect(
-    host="postgres",
+    host=os.getenv("POSTGRES_HOST", "postgres"),
+    port=os.getenv("POSTGRES_PORT", "5432"),
     database=os.getenv("POSTGRES_DB", "soc_data"),
     user=os.getenv("POSTGRES_USER", "user"),
     password=os.getenv("POSTGRES_PASSWORD", "pass")

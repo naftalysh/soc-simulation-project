@@ -9,7 +9,11 @@ def main():
         .getOrCreate()
     
     # JDBC connection properties
-    jdbc_url = "jdbc:postgresql://postgres:5432/{}".format(os.getenv("POSTGRES_DB", "soc_data"))
+    jdbc_url = "jdbc:postgresql://{host}:{port}/{db}".format(
+        host=os.getenv("POSTGRES_HOST", "postgres"),
+        port=os.getenv("POSTGRES_PORT", "5432"),
+        db=os.getenv("POSTGRES_DB", "soc_data")
+    )
     connection_properties = {
         "user": os.getenv("POSTGRES_USER", "user"),
         "password": os.getenv("POSTGRES_PASSWORD", "pass"),
@@ -47,7 +51,17 @@ def main():
     print(f"Max Memory Usage: {memory_usage_stats['max_memory_usage']}")
     print(f"Min Memory Usage: {memory_usage_stats['min_memory_usage']}")
     
-    # Optionally, write results back to PostgreSQL
+    # Create the 'soc_analysis_results' table if it doesn't exist
+    spark.sql("""
+        CREATE TABLE IF NOT EXISTS soc_analysis_results (
+            metric STRING,
+            average DOUBLE,
+            maximum DOUBLE,
+            minimum DOUBLE
+        )
+    """)
+    
+    # Write results back to PostgreSQL
     results_df = spark.createDataFrame([
         ("cpu", cpu_usage_stats['avg_cpu_usage'], cpu_usage_stats['max_cpu_usage'], cpu_usage_stats['min_cpu_usage']),
         ("memory", memory_usage_stats['avg_memory_usage'], memory_usage_stats['max_memory_usage'], memory_usage_stats['min_memory_usage'])

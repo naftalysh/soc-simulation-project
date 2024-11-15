@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     qemu-system-arm \
     qemu-utils \
     gcc \
+    libcurl4-openssl-dev \
     make \
     git \
     python3 \
@@ -22,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     sshpass \
     iputils-ping \
     kmod \  
+    sysstat \
     # Ensure modprobe is available
     && rm -rf /var/lib/apt/lists/*
  
@@ -58,6 +60,15 @@ RUN chmod +x /setup_benchmarks.sh
 # Copy automation scripts
 COPY automation-scripts/automate_benchmarks.py /automate_benchmarks.py
 RUN chmod +x /automate_benchmarks.py
+
+# Copy all C benchmark files to the /benchmarks directory in the container
+# Currently having only disk_test.c
+COPY benchmarks/*.c /benchmarks/
+
+# Compile all C programs in the /benchmarks directory using Optimization Flags
+RUN for file in /benchmarks/*.c; do \
+        gcc -O2 -o "/benchmarks/$(basename "$file" .c)" "$file"; \
+    done
 
 # Install Python dependencies
 RUN pip3 install psutil requests

@@ -8,8 +8,8 @@ services:
       dockerfile: Dockerfile
     privileged: true
     ports:
-      - "5555:5555"
-      - "9100:9100"  # Prometheus metrics exporter
+      - "${SOC_EMULATOR_PORT}:9100"  # Prometheus metrics exporter
+      - "5022:22"  # SSH access to the emulator
     networks:
       soc-net:
         aliases:
@@ -17,14 +17,29 @@ services:
     volumes:
       - ./soc-emulator/benchmarks:/benchmarks
     depends_on:
-      - postgres
       - api-backend
     environment:
-      PROMETHEUS_PORT: "9100"
-      # Set API_BACKEND_URL environment variable if needed
-      # Since the emulated SoC accesses 'http://10.0.2.2:5000' by default, this may not be necessary
-      # But if you need to override it, uncomment the line below
       API_BACKEND_URL: "${API_BACKEND_URL}"
+
+  # API Backend
+  api-backend:
+    build:
+      context: ./api-backend
+      dockerfile: Dockerfile
+    ports:
+      - "${API_BACKEND_PORT}:5000"
+    networks:
+      soc-net:
+        aliases:
+          - "api-backend"
+    depends_on:
+      - postgres
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "${POSTGRES_PORT}"
 
   # Prometheus for Monitoring
   prometheus:
@@ -32,7 +47,7 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
-      - "9090:9090"
+      - "${PROMETHEUS_PORT}:9090"
     networks:
       soc-net:
         aliases:
@@ -43,12 +58,9 @@ services:
     image: grafana/grafana:latest
     environment:
       GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD}"
-      GF_DATASOURCE_POSTGRESQL_USER: "${POSTGRES_USER}"
-      GF_DATASOURCE_POSTGRESQL_PASSWORD: "${POSTGRES_PASSWORD}"
-      GF_DATASOURCE_POSTGRESQL_DB: "${POSTGRES_DB}"
-      GF_PATHS_PROVISIONING: "/etc/grafana/provisioning"
+      GF_SERVER_HTTP_PORT: 3000
     ports:
-      - "3001:3000"
+      - "${GRAFANA_PORT}:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
@@ -59,6 +71,7 @@ services:
           - "grafana"
     depends_on:
       - prometheus
+      - postgres
 
   # PostgreSQL for Data Storage
   postgres:
@@ -70,23 +83,21 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT}:5432"
     networks:
       soc-net:
         aliases:
           - "postgres"
 
-
   # PrestoSQL for Distributed Querying
   prestosql:
     image: trinodb/trino:latest
     ports:
-      - "8080:8080"
+      - "${PRESTO_PORT}:8080"
     networks:
       soc-net:
         aliases:
           - "prestosql"
-
     depends_on:
       - postgres
 
@@ -95,37 +106,31 @@ services:
     image: bitnami/spark:latest
     environment:
       SPARK_MODE: "master"
+      SPARK_MASTER_WEBUI_PORT: "${SPARK_MASTER_WEBUI_PORT}"
     ports:
       - "7077:7077"
-      - "8081:8080"
+      - "${SPARK_MASTER_WEBUI_PORT}:8080"
     networks:
-      - soc-net
+      soc-net:
+        aliases:
+          - "spark-master"
 
   spark-worker:
     image: bitnami/spark:latest
     environment:
       SPARK_MODE: "worker"
       SPARK_MASTER_URL: "spark://spark-master:7077"
+      SPARK_WORKER_WEBUI_PORT: "${SPARK_WORKER_WEBUI_PORT}"
     depends_on:
       - spark-master
+    ports:
+      - "${SPARK_WORKER_WEBUI_PORT}:8081"
     networks:
-      - soc-net
+      soc-net:
+        aliases:
+          - "spark-worker"
 
   # Spark Application
-  # spark-app:
-  #   build:
-  #     context: ./spark-app
-  #     dockerfile: Dockerfile
-  #   depends_on:
-  #     - spark-master
-  #     - spark-worker
-  #     - postgres
-  #   networks:
-  #     - soc-net
-  #   environment:
-  #     SPARK_MASTER_URL: "spark://spark-master:7077"
-  # Remove the 'command' section to use the default entrypoint behavior
-
   spark-app:
     build:
       context: ./spark-app
@@ -142,57 +147,20 @@ services:
       SPARK_MASTER_URL: "spark://spark-master:7077"
     entrypoint: ["/app/entrypoint.sh"]
 
-
-  # spark-app:
-  #   build:
-  #     context: ./spark-app
-  #     dockerfile: Dockerfile
-  #   depends_on:
-  #     - spark-master
-  #     - spark-worker
-  #     - postgres
-  #   networks:
-  #     - soc-net
-  #   environment:
-  #     SPARK_MASTER_URL: "spark://spark-master:7077"
-  #   command:
-  #     - "/opt/bitnami/spark/bin/spark-submit"
-  #     - "--master"
-  #     - "spark://spark-master:7077"
-  #     - "--packages"
-  #     - "org.postgresql:postgresql:42.2.24"
-  #     - "/app/data_analysis.py"
-
-
-  # API Backend
-  api-backend:
-    build:
-      context: ./api-backend
-      dockerfile: Dockerfile
-    ports:
-      - "5000:5000"
-    networks:
-      soc-net:
-        aliases:
-          - "api-backend"
-    depends_on:
-      - postgres
-
   # Performance Testing Tool (Locust)
   locust:
     image: locustio/locust
     volumes:
       - ./locustfile.py:/locustfile.py
-    command: -f /locustfile.py --host=http://soc-emulator:8000
+    command: -f /locustfile.py --host=http://api-backend:5000
     ports:
-      - "8089:8089"
+      - "${LOCUST_PORT}:8089"
     depends_on:
-      - soc-emulator
+      - api-backend
     networks:
       soc-net:
         aliases:
           - "locust"
-
 
 networks:
   soc-net:

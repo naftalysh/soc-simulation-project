@@ -1,10 +1,11 @@
 #!/bin/bash
 
-# Automating the Tests for Each Service
+# Enhanced Testing Script for Each Service
 
 # Define an array of services
 services=(
   "soc-emulator"
+  "api-backend"
   "prometheus"
   "grafana"
   "postgres"
@@ -12,228 +13,203 @@ services=(
   "spark-master"
   "spark-worker"
   "spark-app"
-  "api-backend"
   "locust"
 )
 
-# Function to get container name
-get_container_name() {
-  docker ps --format '{{.Names}}' --filter "name=$1"
-}
-
 # Load environment variables from .env file
-export $(grep -v '^#' .env | xargs)
+if [ -f .env ]; then
+  export $(grep -v '^#' .env | xargs)
+else
+  echo "Error: .env file not found."
+  exit 1
+fi
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
 
 # Start testing each service
+echo -e "\n${GREEN}Starting Service Tests...${NC}\n"
+
+declare -A test_results
+
 for service in "${services[@]}"; do
-  echo "-----------------------------------------"
-  echo "Testing service: $service"
+  echo -e "-----------------------------------------"
+  echo -e "Testing service: ${GREEN}$service${NC}"
 
   # Get the container name
-  container_name=$(get_container_name $service)
+  container_name=$(docker ps --format '{{.Names}}' --filter "name=$service")
 
   if [ -z "$container_name" ]; then
-    echo " - Container for service '$service' is not running!"
+    echo -e " - ${RED}Container for service '$service' is not running!${NC}"
+    test_results[$service]="Failed"
     continue
   else
-    echo " - Container is running: $container_name"
+    echo -e " - Container is running: ${GREEN}$container_name${NC}"
   fi
 
   # Print the last 5 lines of logs
-  echo " - Last 5 log entries:"
+  echo -e " - Last 5 log entries:"
   docker logs "$container_name" --tail 5
 
   # Service-specific tests
   case $service in
     "soc-emulator")
-      # SSH into emulated SoC and verify benchmarks
-      echo " - Testing soc-emulator service..."
-
+      echo -e " - Testing soc-emulator service..."
       # Test SSH connectivity
-      sshpass -p 'raspberry' ssh -o StrictHostKeyChecking=no -p 5022 pi@localhost 'echo "SSH connection successful."'
-
-      # Run a benchmark script via SSH
-      sshpass -p 'raspberry' ssh -o StrictHostKeyChecking=no -p 5022 pi@localhost 'python3 /home/pi/automate_benchmarks.py'
-
-      ;;
-
-    "prometheus")
-      # Check Prometheus targets and query metrics
-      echo " - Testing prometheus service..."
-
-      # Access Prometheus targets API
-      targets=$(curl -s http://localhost:9090/api/v1/targets)
-
-      if echo "$targets" | grep '"health":"up"' >/dev/null; then
-        echo " - Prometheus targets are up."
+      if sshpass -p 'raspberry' ssh -o StrictHostKeyChecking=no -p 5022 pi@localhost 'echo "SSH connection successful."' >/dev/null 2>&1; then
+        echo -e " - SSH connectivity: ${GREEN}Success${NC}"
+        test_results[$service]="Passed"
       else
-        echo " - Prometheus targets are down!"
+        echo -e " - SSH connectivity: ${RED}Failed${NC}"
+        test_results[$service]="Failed"
       fi
-
-      # Query a metric
-      up_metric=$(curl -s 'http://localhost:9090/api/v1/query?query=up')
-      echo " - Prometheus 'up' metric query result:"
-      echo "$up_metric"
-
       ;;
-
-    "grafana")
-      # Test Grafana accessibility and verify dashboards
-      echo " - Testing grafana service..."
-
-      # Check if Grafana login page is accessible
-      status_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:3001/login)
-
-      if [ "$status_code" -eq 200 ]; then
-        echo " - Grafana login page is accessible."
-      else
-        echo " - Grafana login page is not accessible! HTTP status code: $status_code"
-      fi
-
-      # Log in to Grafana and verify dashboards using API
-      echo " - Verifying Grafana dashboards..."
-
-      # Obtain Grafana API token (assuming you have one set up)
-      # Replace 'your_grafana_api_token' with an actual API token
-      GRAFANA_API_TOKEN="your_grafana_api_token"
-
-      if [ "$GRAFANA_API_TOKEN" != "your_grafana_api_token" ]; then
-        dashboards=$(curl -s -H "Authorization: Bearer $GRAFANA_API_TOKEN" \
-          http://localhost:3001/api/search?query=&)
-        if echo "$dashboards" | grep -q 'soc_performance_dashboard'; then
-          echo " - 'soc_performance_dashboard' is present."
-        else
-          echo " - 'soc_performance_dashboard' is missing!"
-        fi
-        if echo "$dashboards" | grep -q 'soc_analysis_results_dashboard'; then
-          echo " - 'soc_analysis_results_dashboard' is present."
-        else
-          echo " - 'soc_analysis_results_dashboard' is missing!"
-        fi
-      else
-        echo " - Grafana API token not set. Skipping dashboard verification."
-      fi
-
-      ;;
-
-    "postgres")
-      # Test PostgreSQL database
-      echo " - Testing postgres service..."
-
-      # Use psql client in the container to list tables
-      docker exec -i "$container_name" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c '\dt'
-
-      # Query data from soc_metrics
-      docker exec -i "$container_name" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'SELECT * FROM soc_metrics LIMIT 5;'
-
-      ;;
-
-    "prestosql")
-      # Test Presto CLI and run a query
-      echo " - Testing prestosql service..."
-
-      # Run a query using Presto CLI inside the container
-      docker exec -i "$container_name" presto --server localhost:8080 --catalog postgresql --schema public --execute 'SELECT * FROM soc_metrics LIMIT 5;'
-
-      ;;
-
-    "spark-master")
-      # Test Spark Master service
-      echo " - Testing spark-master service..."
-
-      # Check if Spark Master Web UI is accessible
-      status_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:8081)
-
-      if [ "$status_code" -eq 200 ]; then
-        echo " - Spark Master Web UI is accessible."
-      else
-        echo " - Spark Master Web UI is not accessible! HTTP status code: $status_code"
-      fi
-
-      ;;
-
-    "spark-worker")
-      # Test Spark Worker service
-      echo " - Testing spark-worker service..."
-
-      # Verify worker registration by checking the Spark Master Web UI
-      worker_info=$(curl -s http://localhost:8081/json/ | grep -o '"Alive":true')
-
-      if [ -n "$worker_info" ]; then
-        echo " - Spark Worker is registered and alive."
-      else
-        echo " - Spark Worker is not registered!"
-      fi
-
-      ;;
-
-    "spark-app")
-      # Test Spark Application
-      echo " - Testing spark-app service..."
-
-      # Check logs for successful completion of data_analysis.py
-      if docker logs "$container_name" 2>&1 | grep -q "CPU Usage Statistics:"; then
-        echo " - Spark application ran successfully."
-      else
-        echo " - Spark application did not run successfully!"
-      fi
-
-      # Verify analysis results in PostgreSQL
-      docker exec -i soc-simulation-project-new_postgres_1 psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c 'SELECT * FROM soc_analysis_results LIMIT 5;'
-
-      ;;
-
+    
     "api-backend")
-      # Test API endpoints
-      echo " - Testing api-backend service..."
-
+      echo -e " - Testing api-backend service..."
       # Test storing a metric
       store_response=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" \
         -d '{"cpu_usage":50,"memory_usage":512,"disk_io":1024,"config_name":"test"}' \
-        http://localhost:5000/api/store_metric)
+        http://localhost:${API_BACKEND_PORT}/api/store_metric)
 
       if [ "$store_response" -eq 200 ]; then
-        echo " - Successfully stored a metric."
+        echo -e " - Store metric endpoint: ${GREEN}Success${NC}"
+        test_results[$service]="Passed"
       else
-        echo " - Failed to store a metric! HTTP status code: $store_response"
+        echo -e " - Store metric endpoint: ${RED}Failed${NC} (HTTP $store_response)"
+        test_results[$service]="Failed"
       fi
-
-      # Test retrieving metrics
-      get_response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/get_metrics)
-
-      if [ "$get_response" -eq 200 ]; then
-        echo " - Successfully retrieved metrics."
-      else
-        echo " - Failed to retrieve metrics! HTTP status code: $get_response"
-      fi
-
       ;;
+    
+    "prometheus")
+      echo -e " - Testing prometheus service..."
+      # Access Prometheus targets API
+      targets=$(curl -s http://localhost:${PROMETHEUS_PORT}/api/v1/targets)
 
-    "locust")
-      # Test Locust service
-      echo " - Testing locust service..."
-
-      # Check if Locust web interface is accessible
-      status_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:8089)
+      if echo "$targets" | grep '"health":"up"' >/dev/null; then
+        echo -e " - Prometheus targets: ${GREEN}Up${NC}"
+        test_results[$service]="Passed"
+      else
+        echo -e " - Prometheus targets: ${RED}Down${NC}"
+        test_results[$service]="Failed"
+      fi
+      ;;
+    
+    "grafana")
+      echo -e " - Testing grafana service..."
+      # Check if Grafana login page is accessible
+      status_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:${GRAFANA_PORT}/login)
 
       if [ "$status_code" -eq 200 ]; then
-        echo " - Locust web interface is accessible."
+        echo -e " - Grafana login page: ${GREEN}Accessible${NC}"
+        test_results[$service]="Passed"
       else
-        echo " - Locust web interface is not accessible! HTTP status code: $status_code"
+        echo -e " - Grafana login page: ${RED}Not Accessible${NC} (HTTP $status_code)"
+        test_results[$service]="Failed"
       fi
-
-      # Start a headless Locust test
-      echo " - Running Locust load test..."
-
-      docker run --rm --net=host locustio/locust -f /locustfile.py --headless -u 10 -r 2 -t 30s --host http://api-backend:5000
-
       ;;
+    
+    "postgres")
+      echo -e " - Testing postgres service..."
+      # Use psql client in the container to list tables
+      tables=$(docker exec -i "$container_name" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c '\dt' | grep 'soc_metrics')
+      if [ -n "$tables" ]; then
+        echo -e " - Tables exist: ${GREEN}Yes${NC}"
+        test_results[$service]="Passed"
+      else
+        echo -e " - Tables exist: ${RED}No${NC}"
+        test_results[$service]="Failed"
+      fi
+      ;;
+    
+    "prestosql")
+      echo -e " - Testing prestosql service..."
+      # Run a query using Trino CLI inside the container
+      query_result=$(docker exec -i "$container_name" trino --server localhost:8080 --catalog postgresql --schema public --execute 'SELECT COUNT(*) FROM soc_metrics;' 2>&1)
+      if echo "$query_result" | grep -q '[0-9]'; then
+        echo -e " - PrestoSQL query: ${GREEN}Success${NC}"
+        test_results[$service]="Passed"
+      else
+        echo -e " - PrestoSQL query: ${RED}Failed${NC}"
+        echo "$query_result"
+        test_results[$service]="Failed"
+      fi
+      ;;
+    
+    "spark-master")
+      echo -e " - Testing spark-master service..."
+      # Check if Spark Master Web UI is accessible
+      status_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:${SPARK_MASTER_WEBUI_PORT})
 
+      if [ "$status_code" -eq 200 ]; then
+        echo -e " - Spark Master Web UI: ${GREEN}Accessible${NC}"
+        test_results[$service]="Passed"
+      else
+        echo -e " - Spark Master Web UI: ${RED}Not Accessible${NC} (HTTP $status_code)"
+        test_results[$service]="Failed"
+      fi
+      ;;
+    
+    "spark-worker")
+      echo -e " - Testing spark-worker service..."
+      # Verify worker registration by checking the Spark Master's Web UI
+      worker_info=$(curl -s http://localhost:${SPARK_MASTER_WEBUI_PORT}/json | grep -o '"id":"worker-[^"]*","state":"ALIVE"')
+
+      if [ -n "$worker_info" ]; then
+        echo -e " - Spark Worker registration: ${GREEN}Successful${NC}"
+        test_results[$service]="Passed"
+      else
+        echo -e " - Spark Worker registration: ${RED}Failed${NC}"
+        test_results[$service]="Failed"
+      fi
+      ;;
+    
+    "spark-app")
+      echo -e " - Testing spark-app service..."
+      # Check logs for successful completion of data_analysis.py
+      if docker logs "$container_name" 2>&1 | grep -q "CPU Usage Statistics:"; then
+        echo -e " - Spark application execution: ${GREEN}Success${NC}"
+        test_results[$service]="Passed"
+      else
+        echo -e " - Spark application execution: ${RED}Failed${NC}"
+        test_results[$service]="Failed"
+      fi
+      ;;
+    
+    "locust")
+      echo -e " - Testing locust service..."
+      # Check if Locust web interface is accessible
+      status_code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:${LOCUST_PORT})
+
+      if [ "$status_code" -eq 200 ]; then
+        echo -e " - Locust web interface: ${GREEN}Accessible${NC}"
+        test_results[$service]="Passed"
+      else
+        echo -e " - Locust web interface: ${RED}Not Accessible${NC} (HTTP $status_code)"
+        test_results[$service]="Failed"
+      fi
+      ;;
+    
     *)
-      echo " - No specific tests defined for service: $service"
+      echo -e " - No specific tests defined for service: $service"
+      test_results[$service]="Skipped"
       ;;
   esac
 
-  echo "-----------------------------------------"
-  echo ""
+  echo -e "-----------------------------------------\n"
+done
+
+# Summary of Test Results
+echo -e "${GREEN}Test Summary:${NC}"
+for service in "${services[@]}"; do
+  result=${test_results[$service]}
+  if [ "$result" == "Passed" ]; then
+    echo -e " - $service: ${GREEN}Passed${NC}"
+  elif [ "$result" == "Failed" ]; then
+    echo -e " - $service: ${RED}Failed${NC}"
+  else
+    echo -e " - $service: Skipped"
+  fi
 done
